@@ -29,6 +29,8 @@ setup(
     entry_points={
         'console_scripts': [
             'proj = projectcode.proj:main',
+            'proj_right_legs_move = projectcode.proj_right_legs_move:main',
+            'proj_toe_on_ground = projectcode.proj_toe_on_ground:main',
         ],
     },
 )
