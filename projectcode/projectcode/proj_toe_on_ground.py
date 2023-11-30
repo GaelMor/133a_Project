@@ -30,8 +30,10 @@ class Trajectory():
         self.rr_toe_chain = KinematicChain(node, 'world', 'rear_right_toe_link', self.get_jointnames("rr_toe"))
 
         # Define the various points.
-        self.q0 = np.radians(np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).reshape((-1,1)))
-        self.q0[1,0] = -0.1
+        self.q0 = np.zeros((17,1))
+        self.q0[1,0] = 0 #vertical displacement
+        self.q0[2,0] = np.radians(15) #roll (about x axis)
+        self.q0[3,0] = np.radians(0) #roll (about x axis)
 
         toe_q0 = np.array([0 for i in range(len(self.get_jointnames("fl_toe")))]).reshape((-1,1))
         (fl_toe_pos, _, _, _) = self.fl_toe_chain.fkin(toe_q0)
@@ -59,14 +61,16 @@ class Trajectory():
             rl_toe_q0.append(self.qlast[i,0])
         rl_toe_q0 = np.array(rl_toe_q0).reshape(-1,1)
 
-        (self.fl_xd_last, self.fl_Rd_last, _ , _ ) = self.fl_toe_chain.fkin(fl_toe_q0)
-        (self.rl_xd_last, self.rl_Rd_last, _ , _ )  = self.rl_toe_chain.fkin(rl_toe_q0)
+        (self.fl_xd_last, _ , _ , _ ) = self.fl_toe_chain.fkin(fl_toe_q0)
+        (self.rl_xd_last, _ , _ , _ )  = self.rl_toe_chain.fkin(rl_toe_q0)
         self.Rd_last = self.R0
         self.lam = 20
 
         #self.pub = node.create_publisher(Float64, '/condition', 10)
 
         self.toe_delta = np.array([0.1, 0, 0.1]).reshape(-1,1)
+
+        self.gamma = 0.01
 
 
     # Declare the joint names.
@@ -76,7 +80,7 @@ class Trajectory():
                 'front_left_shoulder', 'front_left_leg', 'front_left_foot', 
                 'front_right_shoulder', 'front_right_leg', 'front_right_foot', 
                 'rear_left_shoulder', 'rear_left_leg', 'rear_left_foot', 
-                'rear_right_shoulder', 'rear_right_leg', 'rear_right_foot']
+                'rear_right_shoulder', 'rear_right_leg', 'rear_right_foot', 'attach-board']
 
     def get_jointindexes(self, name):
         if name == "fl_toe":
@@ -120,18 +124,18 @@ class Trajectory():
     # Evaluate at the given time.  This was last called (dt) ago.
     def evaluate(self, t, dt):
 
-        self.qlast[1,0] = -0.1 * sin(0.1*t) * sin(0.1*t)
+        self.qlast[1,0] = -0.1 * sin(0.4*t) * sin(0.4*t)
 
         # desired positions for right toes
         fl_pd = self.fl_p0 
         fl_vd = np.array([0,0,0]).reshape(-1,1)
-        fl_Rd = Reye()
-        fl_wd = np.array([0,0,0]).reshape(-1,1)
+        #fl_Rd = Reye()
+        #fl_wd = np.array([0,0,0]).reshape(-1,1)
 
         rl_pd = self.rl_p0 
         rl_vd = np.array([0,0,0]).reshape(-1,1)
-        rl_Rd = Reye()
-        rl_wd = np.array([0,0,0]).reshape(-1,1)
+        #rl_Rd = Reye()
+        #rl_wd = np.array([0,0,0]).reshape(-1,1)
 
 
         # kinematic chains
@@ -149,26 +153,26 @@ class Trajectory():
         rl_qlast = np.array(rl_qlast).reshape(-1,1)
 
 
-        (fl_p, fl_R, fl_Jv, fl_Jw) = self.fl_toe_chain.fkin(fl_qlast)
-        (rl_p, rl_R, rl_Jv, rl_Jw) = self.rl_toe_chain.fkin(rl_qlast)
-        qdot = np.radians(np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).reshape((-1,1)))
+        (fl_p, _ , fl_Jv, _ ) = self.fl_toe_chain.fkin(fl_qlast)
+        (rl_p, _ , rl_Jv, _ ) = self.rl_toe_chain.fkin(rl_qlast)
+        qdot = np.zeros((17,1))
 
         # inverse kinematics for fl toe
         # Compute the errors
         error_pos = ep(self.fl_xd_last, fl_p)
-        error_rot = eR(self.fl_Rd_last, fl_R)
-        error = np.vstack((error_pos, error_rot))
+        error = error_pos
 
         # compute qdot
-        vd = fl_vd
-        wd = fl_wd
-        v = np.vstack((vd,wd))
+        v = fl_vd
         A = v + self.lam * error
     
         fl_Jv[:,0:4] = 0
-        fl_Jw[:,0:4] = 0
-        J = np.vstack((fl_Jv, fl_Jw))
-        fl_qdot = np.linalg.pinv(J) @ A
+        J = fl_Jv
+        JT = np.transpose(J)
+        JW_pinv = JT @ np.linalg.inv(J @ JT + (self.gamma**2) * np.eye(3)) 
+        fl_qdot = JW_pinv @ A
+
+        #fl_qdot = np.linalg.pinv(J) @ A
 
         # Integrate the joint position.
         indexes = self.get_jointindexes("fl_toe")
@@ -182,19 +186,20 @@ class Trajectory():
         # inverse kinematics for rl toe
         # Compute the errors
         error_pos = ep(self.rl_xd_last, rl_p)
-        error_rot = eR(self.rl_Rd_last, rl_R)
-        error = np.vstack((error_pos, error_rot))
+        error = error_pos
 
         # compute qdot
-        vd = rl_vd
-        wd = rl_wd
-        v = np.vstack((vd,wd))
+        v = rl_vd
         A = v + self.lam * error
     
         rl_Jv[:,0:4] = 0
-        rl_Jw[:,0:4] = 0
-        J = np.vstack((rl_Jv, rl_Jw))
-        rl_qdot = np.linalg.pinv(J) @ A
+        J = rl_Jv
+
+        JT = np.transpose(J)
+        JW_pinv = JT @ np.linalg.inv(J @ JT + (self.gamma**2) * np.eye(3)) 
+        rl_qdot = JW_pinv @ A
+
+        #rl_qdot = np.linalg.pinv(J) @ A
 
         # Integrate the joint position.
         indexes = self.get_jointindexes("rl_toe")
@@ -206,15 +211,16 @@ class Trajectory():
 
 
         q = self.qlast + dt * qdot
-        print(q)
+        q[16,0] = -1 *(q[5,0] + q[6,0])
+        #print(q)
 
 
         # Save the data needed next cycle.
         self.qlast = q
         self.fl_xd_last = fl_pd
         self.rl_xd_last = rl_pd
-        self.fl_Rd_last = fl_Rd
-        self.rl_Rd_last = rl_Rd
+        #self.fl_Rd_last = fl_Rd
+        #self.rl_Rd_last = rl_Rd
         return (q.flatten().tolist(), qdot.flatten().tolist())
 
 
