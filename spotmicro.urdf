@@ -411,7 +411,7 @@
     <child link="front_right_foot_link"/>
     <axis xyz="0 1 0"/>
     <origin rpy="0 0 0" xyz="0.014 0 -0.109"/>
-    <limit effort="1000.0" lower="-2.59" upper="0.1" velocity="0.5"/>
+    <limit effort="1000.0" lower="-2.59" upper="2.0" velocity="0.5"/>
     <dynamics damping="0.0" friction="0.5"/>
   </joint>
   <transmission name="front_right_foot_trans">
@@ -717,7 +717,7 @@
     <child link="rear_right_foot_link"/>
     <axis xyz="0 1 0"/>
     <origin rpy="0 0 0" xyz="0.014 0 -0.109"/>
-    <limit effort="1000.0" lower="-2.59" upper="0.1" velocity="0.5"/>
+    <limit effort="1000.0" lower="-2.59" upper="2.0" velocity="0.5"/>
     <dynamics damping="0.0" friction="0.5"/>
   </joint>
   <transmission name="rear_right_foot_trans">
@@ -735,5 +735,50 @@
     <child link="rear_right_toe_link"/>
     <origin xyz="0 0 -0.13"/>
   </joint>
+
+    <!-- *************************************************** -->
+
+  <!-- ******************* Board ************************* -->
+
+  <!-- *************************************************** -->
+
+  
+
+  <joint name="attach-board" type="revolute">
+
+    <parent link="front_left_toe_link"/>
+
+    <child  link="board"/>
+
+    <origin xyz="0 -0.01 0.015" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="1000.0" lower="-3.0" upper="3.0" velocity="0.5"/>
+
+  </joint>
+
+  <link name="board">
+
+    <visual>
+
+      <origin          xyz="-0.506 -0.0875 -0.016" rpy="1.57 0 1.57"/>
+
+      <geometry> <mesh filename = "package://spotmicro_description/meshes/stl/CP_Snowboard.stl" scale = ".0005 .0005 .0005" /></geometry>
+
+      <!--<geometry> <box size="0.45 0.20 0.02"/> </geometry>-->
+
+      <material name="purple"/>
+
+    </visual>
+
+    <collision>
+
+      <origin          xyz="-0.506 -0.0875 -0.016" rpy="1.57 0 1.57"/>
+
+      <geometry> <box size="0.45 0.20 0.02"/> </geometry>
+
+    </collision>
+
+  </link>
+    <gazebo reference="board">    <material>Gazebo/Cyan</material>  </gazebo>
 </robot>
 
