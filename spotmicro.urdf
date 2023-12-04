@@ -15,17 +15,25 @@
   </material>
   <!-- Robot Body, added world -->
   <link name="world"/>
-  <joint name="base_horiz" type="prismatic">
+  <joint name="world_horiz" type="prismatic">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="world"/>
-    <child link="base_horiz_d"/>
+    <child link="world_horiz_d"/>
     <limit effort="1000.0" lower="-10" upper="10" velocity="0.5"/>
     <axis xyz="1 0 0"/>
   </joint>
-  <link name="base_horiz_d"/>
+  <link name="world_horiz_d"/>
+  <joint name="world_vert" type="prismatic">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="world_horiz_d"/>
+    <child link="world_vert_d"/>
+    <limit effort="1000.0" lower="-10" upper="10" velocity="0.5"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <link name="world_vert_d"/>
   <joint name="base_vert" type="prismatic">
     <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="base_horiz_d"/>
+    <parent link="world_vert_d"/>
     <child link="base_roll_d"/>
     <limit effort="1000.0" lower="-0.5" upper="0.5" velocity="0.5"/>
     <axis xyz="0 0 1"/>
