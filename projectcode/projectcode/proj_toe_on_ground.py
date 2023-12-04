@@ -29,18 +29,21 @@ class Trajectory():
         self.num_joints = len(self.jointnames())
 
         # Set up the kinematic chain object.
-        self.fl_toe_chain = KinematicChain(node, 'world_vert_d', 'front_left_toe_link', self.get_jointnames("fl_toe"))
-        self.fr_toe_chain = KinematicChain(node, 'world_vert_d', 'front_right_toe_link', self.get_jointnames("fr_toe"))
-        self.rl_toe_chain = KinematicChain(node, 'world_vert_d', 'rear_left_toe_link', self.get_jointnames("rl_toe"))
-        self.rr_toe_chain = KinematicChain(node, 'world_vert_d', 'rear_right_toe_link', self.get_jointnames("rr_toe"))
+        self.fl_toe_chain = KinematicChain(node, 'world_yaw_d', 'front_left_toe_link', self.get_jointnames("fl_toe"))
+        self.fr_toe_chain = KinematicChain(node, 'world_yaw_d', 'front_right_toe_link', self.get_jointnames("fr_toe"))
+        self.rl_toe_chain = KinematicChain(node, 'world_yaw_d', 'rear_left_toe_link', self.get_jointnames("rl_toe"))
+        self.rr_toe_chain = KinematicChain(node, 'world_yaw_d', 'rear_right_toe_link', self.get_jointnames("rr_toe"))
 
         # Define the various points.
         q0 = np.zeros((self.num_joints,1))
 
         q0[self.indices['base_vert'],0] = 0 #robot's vertical displacement
         q0[self.indices['base_roll'],0] = np.radians(0) #pitch (about y axis)
-        #q0[self.indices['base_pitch'],0] = np.radians(10) #roll (about x axis)
+
+        q0[self.indices['world_yaw'],0] = 0
         q0[self.indices['world_horiz'],0] = -3
+        q0[self.indices['world_vert'],0] = 0.4
+        
 
 
         toe_q0 = np.array([0 for i in range(len(self.get_jointnames("fl_toe")))]).reshape((-1,1))
@@ -116,7 +119,7 @@ class Trajectory():
     # Declare the joint names.
     def jointnames(self):
         # Return a list of joint names FOR THE EXPECTED URDF!        
-        return ['world_horiz','world_vert','base_vert', 'base_roll', 'base_pitch', 
+        return ['world_horiz','world_vert', 'world_y', 'world_yaw', 'base_vert', 'base_roll', 'base_pitch', 
                 'front_left_shoulder', 'front_left_leg', 'front_left_foot', 
                 'front_right_shoulder', 'front_right_leg', 'front_right_foot', 
                 'rear_left_shoulder', 'rear_left_leg', 'rear_left_foot', 
@@ -130,14 +133,6 @@ class Trajectory():
         return indices
 
     def get_jointindexes(self, name):
-        '''if name == "fl_toe":
-            return [1,2,3,4,5,6]
-        elif name == "fr_toe":
-            return [1,2,3,7,8,9]
-        elif name == "rl_toe":
-            return [1,2,3,10,11,12]
-        else:
-            return [1,2,3,13,14,15]'''
         joints = self.get_jointnames(name)
         indices = []
         for joint in joints:
@@ -176,27 +171,27 @@ class Trajectory():
 
     # Evaluate at the given time.  This was last called (dt) ago.
     def evaluate(self, t, dt):
-        self.curr_dir = Roty(self.qlast[self.indices['base_roll'],0]) @ self.dir
+        self.qlast[self.indices['world_yaw'],0] = np.radians(10) * sin(t)
+
+        self.curr_dir = Rotz(self.qlast[self.indices['world_yaw'],0]) @ Roty(self.qlast[self.indices['base_roll'],0]) @ self.dir
         #print(self.curr_dir)
-        self.qlast[self.indices['world_horiz'],0] += (self.curr_dir[0,0] * 0.001)  #makes robot move in x direction
+        self.qlast[self.indices['world_horiz'],0] += (self.curr_dir[0,0] * 0.005)  #makes robot move in x direction
         if self.qlast[self.indices['world_horiz'],0] >= 3:
             self.qlast[self.indices['world_horiz'],0] = -3
 
-        self.qlast[self.indices['world_vert'],0] += (self.curr_dir[2,0] * 0.001) #makes robot move in z direction
+        self.qlast[self.indices['world_y'],0] += (self.curr_dir[1,0] * 0.005)
+        self.qlast[self.indices['world_vert'],0] += (self.curr_dir[2,0] * 0.005) #makes robot move in z direction
 
         self.qlast[self.indices['base_vert'],0] = -0.1 * sin(0.4*t) * sin(0.4*t)
-        pitch_omega = 0.50
+        pitch_omega = 1.0
+        roll_omega = 0.50
         self.qlast[self.indices['base_roll'],0] = np.radians(15) * sin(pitch_omega *t) #pitch (about y axis)
-        self.qlast[self.indices['base_pitch'],0] = np.radians(15) * sin(pitch_omega *t) #roll (about x axis)
+        self.qlast[self.indices['base_pitch'],0] = np.radians(15) * sin(roll_omega *t) #roll (about x axis)
 
 
         # desired positions for left toes
         fl_pd = self.fl_p0 
         fl_vd = np.array([0,0,0]).reshape(-1,1)
-        #fl_Rd = Reye()
-        #fl_wd = np.array([0,0,0]).reshape(-1,1)
-
-        #rl_pd = self.rl_p0 
 
         rl_pd = self.fl_p0  + Roty(self.qlast[self.indices['base_roll'],0]) @ self.vec 
         rl_vd = np.array([0,0,0]).reshape(-1,1)
@@ -205,7 +200,7 @@ class Trajectory():
         rl_vd[2,0] = -1 * self.vec[0,0] * cos(np.radians(15) * sin(pitch_omega*t)) * np.radians(15) * cos(pitch_omega*t) * pitch_omega  - self.vec[2,0] * sin(np.radians(15) * sin(pitch_omega*t)) * np.radians(15) * cos(pitch_omega*t) * pitch_omega 
 
         # desired positions for right toes
-        fr_omega = 1.50
+        fr_omega = 3.0
         fr_pd = np.zeros((3,1))
         fr_pd[0,0] =  self.fr_p0[0,0] - self.toe_delta[0,0] * sin(fr_omega * t)
         fr_pd[1,0] =  self.fr_p0[1,0] 
@@ -219,7 +214,7 @@ class Trajectory():
         fr_vd = Roty(self.qlast[self.indices['base_roll'],0]) @ fr_vd
 
 
-        rr_omega = 1.5
+        rr_omega = 3.0
         #rr_pd = np.zeros((3,1))
         #rr_pd[0,0] =  self.rr_p0[0,0] - self.toe_delta[0,0] * sin(rr_omega * t)
         #rr_pd[1,0] =  self.rr_p0[1,0] 
@@ -302,7 +297,7 @@ class Trajectory():
         indexes = self.get_jointindexes("fl_toe")
         j  = 0
         for i in indexes:
-            if i > 4:
+            if i > 6:
                 qdot[i,0] = fl_qdot[j,0]
             j += 1
 
@@ -330,7 +325,7 @@ class Trajectory():
         indexes = self.get_jointindexes("rl_toe")
         j  = 0
         for i in indexes:
-            if i > 4:
+            if i > 6:
                 qdot[i,0] = rl_qdot[j,0]
             j += 1
 
@@ -362,7 +357,7 @@ class Trajectory():
         indexes = self.get_jointindexes("fr_toe")
         j  = 0
         for i in indexes:
-            if i > 4:
+            if i > 6:
                 qdot[i,0] = fr_qdot[j,0]
             j += 1
 
@@ -392,7 +387,7 @@ class Trajectory():
         indexes = self.get_jointindexes("rr_toe")
         j = 0
         for i in indexes:
-            if i > 4:
+            if i > 6:
                 qdot[i,0] = rr_qdot[j,0]
             j += 1
         
