@@ -24,6 +24,8 @@ class Trajectory():
     # Initialization.
     def __init__(self, node):
 
+        self.shoulder_lock = True
+
         #construct dictionary for indices of joints
         self.indices = self.jointindices()
         self.num_joints = len(self.jointnames())
@@ -116,6 +118,8 @@ class Trajectory():
         self.lam_ls = 10 #secondary lambda value for left toes
         self.lam_rs = 10 #secondary lambda value for right toes
 
+
+
     # Declare the joint names.
     def jointnames(self):
         # Return a list of joint names FOR THE EXPECTED URDF!        
@@ -174,7 +178,7 @@ class Trajectory():
         self.qlast[self.indices['world_yaw'],0] = np.radians(10) * sin(t)
 
         self.curr_dir = Rotz(self.qlast[self.indices['world_yaw'],0]) @ Roty(self.qlast[self.indices['base_roll'],0]) @ self.dir
-        #print(self.curr_dir)
+
         self.qlast[self.indices['world_horiz'],0] += (self.curr_dir[0,0] * 0.005)  #makes robot move in x direction
         if self.qlast[self.indices['world_horiz'],0] >= 3:
             self.qlast[self.indices['world_horiz'],0] = -3
@@ -215,13 +219,7 @@ class Trajectory():
 
 
         rr_omega = 3.0
-        #rr_pd = np.zeros((3,1))
-        #rr_pd[0,0] =  self.rr_p0[0,0] - self.toe_delta[0,0] * sin(rr_omega * t)
-        #rr_pd[1,0] =  self.rr_p0[1,0] 
-        #rr_pd[2,0] =  (self.rr_p0[2,0] + self.toe_delta[2,0]) - self.toe_delta[2,0] * cos(rr_omega * t) - self.offset
-        #rr_pd = Roty(self.qlast[self.indices['base_roll'],0]) @ rr_pd
         rr_pd = fr_pd  + Roty(self.qlast[self.indices['base_roll'],0]) @ self.vec_off_board
-
 
         rr_vd = np.zeros((3,1))
         rr_vd[0,0] =  -1 * self.toe_delta[0,0] * cos(rr_omega * t) * rr_omega
@@ -263,12 +261,6 @@ class Trajectory():
         (rl_p, _ , rl_Jv, _ ) = self.rl_toe_chain.fkin(rl_qlast)
         (fr_p, fr_R, fr_Jv, fr_Jw) = self.fr_toe_chain.fkin(fr_qlast)
         (rr_p, rr_R, rr_Jv, rr_Jw) = self.rr_toe_chain.fkin(rr_qlast)
-
-        #if fr_p[2,0] < self.minz:
-        #    self.minz = fr_p[2,0]
-        #else:
-        #    print("min z : ", self.minz)
-        #    print("left z: ", fl_p[2,0])
         
         qdot = np.zeros((self.num_joints,1))
 
@@ -281,8 +273,10 @@ class Trajectory():
         v = fl_vd
         A = v + self.lam * error
     
-        #maybe change the 3 to a 4 (or do something with desired pos)
         fl_Jv[:,0:3] = 0
+        if self.shoulder_lock:
+            fl_Jv[:,0:4] = 0
+
         J = fl_Jv
         JT = np.transpose(J)
         JW_pinv = JT @ np.linalg.inv(J @ JT + (self.l_gamma**2) * np.eye(3)) 
@@ -290,7 +284,6 @@ class Trajectory():
         qdot_s[5,0] = self.lam_ls * (-pi/2 - self.qlast[self.indices['front_left_foot'], 0])
         fl_qdot = JW_pinv @ A + ((np.eye(6) - JW_pinv @ J) @ qdot_s)
         #fl_qdot = JW_pinv @ A 
-
         #fl_qdot = np.linalg.pinv(J) @ A
 
         # Integrate the joint position.
@@ -312,6 +305,8 @@ class Trajectory():
         A = v + self.lam * error
     
         rl_Jv[:,0:3] = 0
+        if self.shoulder_lock:
+            rl_Jv[:,0:4] = 0
         J = rl_Jv
 
         JT = np.transpose(J)
