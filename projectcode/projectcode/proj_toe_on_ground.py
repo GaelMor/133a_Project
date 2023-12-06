@@ -25,6 +25,7 @@ class Trajectory():
     def __init__(self, node):
 
         self.shoulder_lock = True
+        self.pub = node.create_publisher(Float64, '/condition', 10)
 
         #construct dictionary for indices of joints
         self.indices = self.jointindices()
@@ -390,6 +391,12 @@ class Trajectory():
         q = self.qlast + dt * qdot
         q[self.indices['attach-board'],0] = -1 *(q[self.indices['front_left_leg'],0] + q[self.indices['front_left_foot'],0])
         #print(q)
+
+        Jbar = np.diag([1, 1, 1]) @ J
+        condition = np.linalg.cond(Jbar)
+        msg = Float64()
+        msg.data = condition
+        self.pub.publish(msg)
 
 
         # Save the data needed next cycle.
