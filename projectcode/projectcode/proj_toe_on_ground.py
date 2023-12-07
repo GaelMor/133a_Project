@@ -41,7 +41,7 @@ class Trajectory():
         q0 = np.zeros((self.num_joints,1))
 
         q0[self.indices['base_vert'],0] = 0 #robot's vertical displacement
-        q0[self.indices['base_roll'],0] = np.radians(0) #pitch (about y axis)
+        q0[self.indices['base_roll'],0] = 0 #pitch (about y axis)
 
         q0[self.indices['world_yaw'],0] = 0
         q0[self.indices['world_horiz'],0] = -3
@@ -96,14 +96,18 @@ class Trajectory():
         (self.rl_xd_last, _ , _ , _ )  = self.rl_toe_chain.fkin(rl_toe_q0)
         (self.fr_xd_last, _ , _ , _ ) = self.fr_toe_chain.fkin(fr_toe_q0)
         (self.rr_xd_last, _ , _ , _ )  = self.rr_toe_chain.fkin(rr_toe_q0)
+        if self.shoulder_lock:
+            self.fl_xd_last = np.array([self.fl_xd_last[0,0], self.fl_xd_last[2,0]]).reshape(-1,1)
+            self.rl_xd_last = np.array([self.rl_xd_last[0,0], self.rl_xd_last[2,0]]).reshape(-1,1)
+
         self.Rd_last = self.R0
         self.lam = 20
 
         #self.pub = node.create_publisher(Float64, '/condition', 10)   
         self.toe_delta = np.array([0.06, 0, 0.04]).reshape(-1,1)
 
-        self.l_gamma = 0.01 #gamma used for left legs (the ones on board)
-        self.r_gamma = 0.02 #gamma used for right legs (the ones off the board)
+        self.l_gamma = 0.1 #gamma used for left legs (the ones on board)
+        self.r_gamma = 0.1 #gamma used for right legs (the ones off the board)
 
         self.minz = 100 #used for debugging
 
@@ -204,6 +208,13 @@ class Trajectory():
         rl_vd[1,0] = 0 
         rl_vd[2,0] = -1 * self.vec[0,0] * cos(np.radians(15) * sin(pitch_omega*t)) * np.radians(15) * cos(pitch_omega*t) * pitch_omega  - self.vec[2,0] * sin(np.radians(15) * sin(pitch_omega*t)) * np.radians(15) * cos(pitch_omega*t) * pitch_omega 
 
+        if self.shoulder_lock:
+            fl_pd = np.array([fl_pd[0,0], fl_pd[2,0]]).reshape(-1,1)
+            rl_pd = np.array([rl_pd[0,0], rl_pd[2,0]]).reshape(-1,1)
+
+            fl_vd = np.array([fl_vd[0,0], fl_vd[2,0]]).reshape(-1,1)
+            rl_vd = np.array([rl_vd[0,0], rl_vd[2,0]]).reshape(-1,1)
+
         # desired positions for right toes
         fr_omega = 3.0
         fr_pd = np.zeros((3,1))
@@ -262,6 +273,12 @@ class Trajectory():
         (rl_p, _ , rl_Jv, _ ) = self.rl_toe_chain.fkin(rl_qlast)
         (fr_p, fr_R, fr_Jv, fr_Jw) = self.fr_toe_chain.fkin(fr_qlast)
         (rr_p, rr_R, rr_Jv, rr_Jw) = self.rr_toe_chain.fkin(rr_qlast)
+
+        if self.shoulder_lock:
+            fl_p = np.array([fl_p[0,0], fl_p[2,0]]).reshape(-1,1)
+            rl_p = np.array([rl_p[0,0], rl_p[2,0]]).reshape(-1,1)
+            fl_Jv = np.delete(fl_Jv, 1, 0)
+            rl_Jv = np.delete(rl_Jv, 1, 0)
         
         qdot = np.zeros((self.num_joints,1))
 
@@ -280,12 +297,14 @@ class Trajectory():
 
         J = fl_Jv
         JT = np.transpose(J)
-        JW_pinv = JT @ np.linalg.inv(J @ JT + (self.l_gamma**2) * np.eye(3)) 
+        I = np.eye(3)
+        if self.shoulder_lock:
+            I = np.eye(2)
+        JW_pinv = JT @ np.linalg.inv(J @ JT + (self.l_gamma**2) * I) 
         qdot_s = np.zeros((6,1))
         qdot_s[5,0] = self.lam_ls * (-pi/2 - self.qlast[self.indices['front_left_foot'], 0])
         fl_qdot = JW_pinv @ A + ((np.eye(6) - JW_pinv @ J) @ qdot_s)
-        #fl_qdot = JW_pinv @ A 
-        #fl_qdot = np.linalg.pinv(J) @ A
+        condition = np.linalg.cond(J)
 
         # Integrate the joint position.
         indexes = self.get_jointindexes("fl_toe")
@@ -311,11 +330,13 @@ class Trajectory():
         J = rl_Jv
 
         JT = np.transpose(J)
-        JW_pinv = JT @ np.linalg.inv(J @ JT + (self.l_gamma**2) * np.eye(3)) 
+        I = np.eye(3)
+        if self.shoulder_lock:
+            I = np.eye(2)
+        JW_pinv = JT @ np.linalg.inv(J @ JT + (self.l_gamma**2) * I) 
         qdot_s = np.zeros((6,1))
         qdot_s[5,0] = self.lam_ls * (-pi/2 - self.qlast[self.indices['rear_left_foot'], 0])
         rl_qdot = JW_pinv @ A + ((np.eye(6) - JW_pinv @ J) @ qdot_s)
-        #rl_qdot = JW_pinv @ A
 
         # Integrate the joint position.
         indexes = self.get_jointindexes("rl_toe")
@@ -330,14 +351,11 @@ class Trajectory():
         # inverse kinematics for fr toe
         # Compute the errors
         error_pos = ep(self.fr_xd_last, fr_p)
-        #error = np.vstack((error_pos, error_rot))
         error = error_pos
 
         # compute qdot
-        #v = np.vstack((vd,wd))
         v = fr_vd
         A = v + self.lam * error
-        #J = np.vstack((Jv, Jw))
         fr_Jv[:,0:3] = 0
         J = fr_Jv
 
@@ -346,8 +364,6 @@ class Trajectory():
         qdot_s = np.zeros((6,1))
         qdot_s[5,0] = self.lam_ls * (-pi/2 - self.qlast[self.indices['front_right_foot'], 0])
         fr_qdot = JW_pinv @ A + ((np.eye(6) - JW_pinv @ J) @ qdot_s)
-
-        #fr_qdot = JW_pinv @ A
 
         # Integrate the joint position.
         indexes = self.get_jointindexes("fr_toe")
@@ -361,14 +377,11 @@ class Trajectory():
         # inverse kinematics for rr toe
         # Compute the errors
         error_pos = ep(self.rr_xd_last, rr_p)
-        #error = np.vstack((error_pos, error_rot))
         error = error_pos
 
         # compute qdot
-        #v = np.vstack((vd,wd))
         v = rr_vd
         A = v + self.lam * error
-        #J = np.vstack((Jv, Jw))
         rr_Jv[:,0:3] = 0
         J = rr_Jv
 
@@ -377,7 +390,6 @@ class Trajectory():
         qdot_s = np.zeros((6,1))
         qdot_s[5,0] = self.lam_ls * (-pi/2 - self.qlast[self.indices['rear_right_foot'], 0])
         rr_qdot = JW_pinv @ A + ((np.eye(6) - JW_pinv @ J) @ qdot_s)
-        #rr_qdot = JW_pinv @ A
 
         # Integrate the joint position.
         indexes = self.get_jointindexes("rr_toe")
@@ -390,13 +402,11 @@ class Trajectory():
 
         q = self.qlast + dt * qdot
         q[self.indices['attach-board'],0] = -1 *(q[self.indices['front_left_leg'],0] + q[self.indices['front_left_foot'],0])
-        #print(q)
 
-        Jbar = np.diag([1, 1, 1]) @ J
-        condition = np.linalg.cond(Jbar)
         msg = Float64()
         msg.data = condition
-        self.pub.publish(msg)
+        if t > 0.1:
+            self.pub.publish(msg)
 
 
         # Save the data needed next cycle.
@@ -405,8 +415,6 @@ class Trajectory():
         self.rl_xd_last = rl_pd
         self.fr_xd_last = fr_pd
         self.rr_xd_last = rr_pd
-        #self.fl_Rd_last = fl_Rd
-        #self.rl_Rd_last = rl_Rd
         return (q.flatten().tolist(), qdot.flatten().tolist())
 
 
